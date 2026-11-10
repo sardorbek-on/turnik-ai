@@ -26,10 +26,14 @@ async function loadModels() {
     }
     throw new Error('Model yuklanmadi: ' + model);
   };
+  // Ikkala model parallel yuklanadi; kamera pose tayyor bo'lishi bilan ochiladi, qo'l modeli fonda tugaydi
+  const handsP = make(HandLandmarker, './models/hand_landmarker.task',
+    { numHands: 2, minHandDetectionConfidence: .5, minHandPresenceConfidence: .5, minTrackingConfidence: .5 })
+    .then(h => { S.hands = h; if (S.pose) $('loadMsg').textContent = 'AI tayyor ✓'; })
+    .catch(e => console.warn("Qo'l modeli yuklanmadi (bosh barmoq 'tekshirib bo'lmadi' bo'ladi):", e));
   S.pose = await make(PoseLandmarker, './models/pose_landmarker_full.task',
     { numPoses: 1, minPoseDetectionConfidence: .5, minPosePresenceConfidence: .5, minTrackingConfidence: .5 });
-  S.hands = await make(HandLandmarker, './models/hand_landmarker.task',
-    { numHands: 2, minHandDetectionConfidence: .5, minHandPresenceConfidence: .5, minTrackingConfidence: .5 });
+  return handsP;
 }
 
 // ---------------------------------------------------------------- kamera
@@ -102,7 +106,7 @@ function loop() {
   const bar = counter.bar;
 
   // Bosh barmoq: har 2-kadrda, faqat turnik aniq bo'lganda
-  if (m.tracked && bar.ready && S.frameNo % 2 === 0) {
+  if (S.hands && m.tracked && bar.ready && S.frameNo % 2 === 0) {
     try {
       const hr = S.hands.detectForVideo(video, now + 0.01);
       S.hands2 = hr.landmarks.map((l, i) => ({ lm: l, score: hr.handedness[i][0].score }));
@@ -266,10 +270,18 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) naviga
   if (!navigator.mediaDevices?.getUserMedia) {
     $('loadMsg').textContent = "Kamera ishlamaydi: sayt HTTPS orqali ochilishi kerak (yoki localhost).";
   }
+  $('loadMsg').textContent = 'AI modellari yuklanmoqda (~17 MB; sekin internetda 1 daqiqagacha, keyingi safar tezroq)…';
   try {
-    await loadModels();
-    $('loadMsg').textContent = 'AI tayyor ✓';
-    $('btnCam').disabled = !navigator.mediaDevices?.getUserMedia;
+    const all = loadModels();
+    const wait = setInterval(() => {            // pose tayyor bo'lishi bilan kamerani ochamiz
+      if (S.pose) {
+        clearInterval(wait);
+        $('btnCam').disabled = !navigator.mediaDevices?.getUserMedia;
+        $('loadMsg').textContent = S.hands ? 'AI tayyor ✓' : "AI tayyor ✓ (qo'l modeli fonda yuklanmoqda)";
+      }
+    }, 200);
+    await all.catch(() => {});
+    if (!S.pose) throw new Error('pose modeli yuklanmadi');
   } catch (e) {
     $('loadMsg').textContent = "AI modellarini yuklab bo'lmadi: " + e.message + " (internet kerak: MediaPipe fayllari CDN dan olinadi)";
     console.error(e);
