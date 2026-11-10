@@ -1,0 +1,116 @@
+<!doctype html>
+<meta charset="utf-8"><title>TURNIK AI — mantiq testlari</title>
+<body style="background:#07090f;color:#e6ebf7;font:14px monospace;padding:16px">
+<pre id="out">Testlar ishlamoqda…</pre>
+<script type="module">
+import { CFG, PullUpCounter, newMetrics, OK, WRONG, UNKNOWN, ERR, angle3, analyzeThumb } from './counter.js';
+
+const FPS = 30, HANDS_Y = 0.30, SCALE = 0.20, BAR_TOP = HANDS_Y - CFG.barTopOffset * SCALE;
+let seed = 1; const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+
+class Sim {
+  constructor({ noise = 0, knee = [175, 175], thumb = [UNKNOWN, UNKNOWN] } = {}) {
+    this.c = new PullUpCounter(); this.t = 0; this.noise = noise; this.knee = knee; this.thumb = thumb; this.events = [];
+    this.c.onEvent = (k, p) => this.events.push([k, p]);
+  }
+  frame(elbow, chinRel, { knee, thumb, tracked = true } = {}) {
+    const n = this.noise ? gauss() * this.noise : 0, k = knee || this.knee, th = thumb || this.thumb;
+    const m = newMetrics(this.t);
+    m.tracked = tracked; m.elbowAngle = tracked ? elbow + n * 40 : null;
+    m.chinY = tracked ? BAR_TOP - chinRel * SCALE + n * 0.02 : null;
+    m.handsY = HANDS_Y + n * 0.005; m.scale = SCALE; m.kneeR = k[0]; m.kneeL = k[1]; m.thumbR = th[0]; m.thumbL = th[1];
+    this.t += 1 / FPS; return this.c.update(m);
+  }
+  hold(sec, e, c, kw) { for (let i = 0; i < Math.floor(sec * FPS); i++) this.frame(e, c, kw); }
+  move(sec, e0, e1, c0, c1, kw) {
+    const n = Math.max(1, Math.floor(sec * FPS));
+    for (let i = 0; i < n; i++) { const f = (i + 1) / n; this.frame(e0 + (e1 - e0) * f, c0 + (c1 - c0) * f, kw); }
+  }
+  hang(sec = 1.5) { this.hold(sec, 172, -1.2); }
+  rep({ topRel = 0.25, elbowTop = 60, bottomHold = 1.0, kw, downFull = true } = {}) {
+    this.move(1.0, 172, elbowTop, -1.2, topRel, kw); this.hold(0.3, elbowTop, topRel, kw);
+    this.move(1.0, elbowTop, downFull ? 172 : 120, topRel, downFull ? -1.2 : -0.3, kw);
+    this.hold(bottomHold, downFull ? 172 : 120, downFull ? -1.2 : -0.3, kw);
+  }
+}
+
+const results = [], log = [];
+const check = (name, cond, info = '') => { results.push([name, !!cond]); log.push((cond ? '  OK   ' : '  XATO ') + name + (info ? `  [${info}]` : '')); };
+const sum = (c) => `${c.total}/${c.correct}/${c.wrong}`;
+
+const tests = {
+  valid() { const s = new Sim(); s.hang(); for (let i = 0; i < 5; i++) s.rep(); s.c.finish(s.t);
+    check("5 ta toza tortilish -> 5 to'g'ri", sum(s.c) === '5/5/0', sum(s.c)); },
+  chin() {
+    const s = new Sim(); s.hang(); s.rep({ topRel: -0.1, elbowTop: 70 }); s.rep({ topRel: 0.01 });
+    const v = s.c.verdicts;
+    check("1-qoida: jag' o'tmadi -> ERR_CHIN", v[0] && v[0].errors.includes(ERR.CHIN));
+    check("1-qoida: jag' o'tdi -> to'g'ri", v.length > 1 && v[1].errors.length === 0);
+    const s2 = new Sim(); s2.hang(); s2.move(1, 172, 130, -1.2, -0.6); s2.move(1, 130, 172, -0.6, -1.2); s2.hold(1, 172, -1.2);
+    check("Kichik tebranish takror emas", s2.c.total === 0, 'total=' + s2.c.total); },
+  knee() {
+    const s = new Sim(); s.hang(); s.rep(); s.rep({ kw: { knee: [120, 175] } }); s.rep({ kw: { knee: [175, 130] } });
+    const v = s.c.verdicts;
+    check("2-qoida: o'ng tizza", v.length === 3 && v[1].errors.includes(ERR.KNEE_R) && !v[1].errors.includes(ERR.KNEE_L));
+    check("2-qoida: chap tizza", v.length === 3 && v[2].errors.includes(ERR.KNEE_L) && !v[2].errors.includes(ERR.KNEE_R));
+    const s2 = new Sim({ knee: [null, null] }); s2.hang(); s2.rep(); const v2 = s2.c.verdicts[0];
+    check("Tizza ko'rinmasa: xato EMAS, 'tekshirib bo'lmadi'", v2.errors.length === 0 && v2.kneeR === UNKNOWN && v2.notes.length > 0);
+    const s3 = new Sim(); s3.hang(); s3.move(1, 172, 60, -1.2, 0.25);
+    for (let i = 0; i < 3; i++) s3.frame(60, 0.25, { knee: [120, 175] });
+    s3.hold(0.3, 60, 0.25); s3.move(1, 60, 172, 0.25, -1.2); s3.hold(1, 172, -1.2);
+    check("Tizza bir lahzalik shovqini xato emas", s3.c.verdicts.every(v => !v.errors.includes(ERR.KNEE_R))); },
+  bottom() {
+    const s = new Sim(); s.hang(); s.rep({ bottomHold: 2.5 }); s.rep({ bottomHold: 4.0 }); s.rep({ bottomHold: 1.0 }); s.c.finish(s.t);
+    const v = s.c.verdicts;
+    check("3-qoida: 2.5 s -> ruxsat", v.length === 3 && v[0].errors.length === 0);
+    check("3-qoida: 4 s -> ERR_BOTTOM", v.length === 3 && v[1].errors.includes(ERR.BOTTOM));
+    check("3-qoida: hisoblagich tuzatildi (3/2/1)", sum(s.c) === '3/2/1', sum(s.c));
+    check("3-qoida: 'rep_revised' hodisasi", s.events.filter(e => e[0] === 'rep_revised').length === 1); },
+  thumb() {
+    const s = new Sim(); s.hang(); s.rep(); let v = s.c.verdicts[0];
+    check("4-qoida: aniqlab bo'lmasa -> xato emas, eslatma", v.errors.length === 0 && v.thumb === UNKNOWN && v.notes.includes(ERR.THUMB_UNKNOWN));
+    s.rep({ kw: { thumb: [WRONG, UNKNOWN] } });
+    check("4-qoida: ishonchli WRONG -> ERR_THUMB", s.c.verdicts[1].errors.includes(ERR.THUMB));
+    s.rep({ kw: { thumb: [OK, OK] } });
+    check("4-qoida: ishonchli OK -> xato yo'q", s.c.verdicts[2].errors.length === 0);
+    const lm = Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }));
+    lm[0] = { x: .5, y: .4 }; lm[9] = { x: .5, y: .3 }; lm[5] = { x: .52, y: .31 }; lm[3] = { x: .54, y: .2 }; lm[4] = { x: .54, y: .15 };
+    check("Bosh barmoq tepada -> WRONG", analyzeThumb({ lm, score: .95 }, .28, .30) === WRONG);
+    lm[4] = { x: .54, y: .33 }; lm[3] = { x: .54, y: .32 };
+    check("Bosh barmoq pastda/ko'rinmas -> UNKNOWN", analyzeThumb({ lm, score: .95 }, .28, .30) === UNKNOWN);
+    check("Qo'l yo'q -> UNKNOWN", analyzeThumb(null, .28, .30) === UNKNOWN);
+    check("Burchak 90/180", Math.abs(angle3([1,0,0],[0,0,0],[0,1,0]) - 90) < 1e-6 && Math.abs(angle3([0,1,0],[0,0,0],[0,-1,0]) - 180) < 1e-6); },
+  cycle() {
+    const s = new Sim(); s.hang(); s.rep({ downFull: false });
+    s.move(1, 120, 60, -0.3, 0.25); s.hold(0.3, 60, 0.25); s.move(1, 60, 172, 0.25, -1.2); s.hold(1, 172, -1.2);
+    const v = s.c.verdicts;
+    check("Yarim tushish -> ERR_CYCLE", v[0] && v[0].errors.includes(ERR.CYCLE));
+    check("Ikki marta sanalmaydi (jami 2)", s.c.total === 2, 'total=' + s.c.total); },
+  noise() {
+    const s = new Sim({ noise: 0.35 }); s.hang(2); for (let i = 0; i < 6; i++) s.rep(); s.c.finish(s.t);
+    check("Shovqin bilan 6 takror aniq sanaladi", s.c.total === 6, sum(s.c));
+    const s2 = new Sim(); s2.hang(); s2.move(1, 172, 60, -1.2, 0.25);
+    for (let i = 0; i < 9; i++) s2.frame(0, 0, { tracked: false });
+    s2.hold(0.3, 60, 0.25); s2.move(1, 60, 172, 0.25, -1.2); s2.hold(1, 172, -1.2);
+    check("0.3 s aniqlash uzilishi: takror saqlanadi", s2.c.total === 1 && s2.c.correct === 1, 'total=' + s2.c.total);
+    const s3 = new Sim(); s3.hang(); s3.move(1, 172, 60, -1.2, 0.25); for (let i = 0; i < 90; i++) s3.frame(0, 0, { tracked: false });
+    check("3 s yo'qolish: sikl bekor", s3.c.total === 0 && s3.c.state === 'READY'); },
+  noBar() {
+    const s = new Sim(); for (let i = 0; i < 5; i++) { s.move(1, 130, 60, -1.2, 0.25); s.move(1, 60, 130, 0.25, -1.2); }
+    check("Turnik aniqlanmaguncha hukm yo'q", s.c.total === 0 && !s.c.bar.ready);
+    const s2 = new Sim(); s2.rep(); s2.rep();
+    check("Turnik qulflangach sanash boshlanadi", s2.c.bar.ready && s2.c.total === 1, 'total=' + s2.c.total); },
+  states() {
+    const s = new Sim(); s.hang(); const seen = [];
+    const seq = [...Array(10).fill([172, -1.2]), ...Array(6).fill([120, -0.8]), ...Array(8).fill([60, 0.3]), ...Array(6).fill([80, -0.3]), ...Array(6).fill([172, -1.2])];
+    for (const [e, c] of seq) seen.push(s.frame(e, c));
+    const order = seen.filter((x, i) => i === 0 || x !== seen[i - 1]);
+    check("Holatlar ketma-ketligi", order.join() === 'READY,PULLING,TOP,DESCENDING,BOTTOM', order.join()); },
+};
+for (const [name, fn] of Object.entries(tests)) { log.push(name); try { fn(); } catch (e) { log.push('  ISTISNO ' + e.stack); results.push([name, false]); } }
+const bad = results.filter(r => !r[1]);
+log.push(`\nJami: ${results.length} tekshiruv, muvaffaqiyatsiz: ${bad.length}`);
+document.getElementById('out').textContent = log.join('\n');
+document.title = bad.length ? 'FAIL' : 'PASS';
+</script>

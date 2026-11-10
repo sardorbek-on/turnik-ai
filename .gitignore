@@ -1,0 +1,16 @@
+# PyInstaller natijalari (katta; Releases orqali tarqatiladi)
+turnik_ai/dist/
+turnik_ai/build/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Mahalliy ma'lumotlar va test natijalari
+turnik_ai/data/
+
+# Tizim fayllari
+Thumbs.db
+.DS_Store

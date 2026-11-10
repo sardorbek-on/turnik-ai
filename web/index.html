@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#07090f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>TURNIK AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <video id="cam" playsinline muted autoplay></video>
+
+    <div id="placeholder">
+      <div class="logo">TURNIK <span>AI</span></div>
+      <p id="loadMsg">AI modellari yuklanmoqda…</p>
+      <button id="btnCam" class="primary" disabled>Kamerani yoqish</button>
+      <p class="hint">Telefonni shtativga turnik oldiga qo'ying: <b>boshdan oyoqqacha</b> va turnik kadrda ko'rinsin.</p>
+    </div>
+
+    <div id="hud" hidden>
+      <div class="stats">
+        <div class="stat"><span>JAMI</span><b id="sTotal">0</b></div>
+        <div class="stat ok"><span>TO'G'RI</span><b id="sOk">0</b></div>
+        <div class="stat bad"><span>NOTO'G'RI</span><b id="sBad">0</b></div>
+      </div>
+      <div class="row">
+        <div id="chip">READY</div>
+        <div id="bottomTimer"><span>Pastda</span> <b id="tVal">0.0</b> s</div>
+      </div>
+      <div id="barMsg"></div>
+      <div id="errors"></div>
+      <div id="fps">FPS —</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button id="btnStart" class="primary" disabled>START</button>
+    <button id="btnPause" disabled>PAUSE</button>
+    <button id="btnStop" class="danger" disabled>STOP</button>
+    <button id="btnMenu" aria-label="Sozlamalar">⚙</button>
+  </div>
+</div>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="sheetBody">
+    <div class="tabs"><button data-tab="set" class="on">Sozlamalar</button><button data-tab="hist">Tarix</button></div>
+    <div id="tabSet">
+      <label>Kamera <select id="selCam"></select></label>
+      <label>Sifat
+        <select id="selRes">
+          <option value="1280x720">720p (tavsiya)</option><option value="640x480">480p (tez)</option><option value="1920x1080">1080p</option>
+        </select></label>
+      <div class="two">
+        <button id="btnFlip">Old/orqa kamera</button>
+        <button id="btnMirror">Ko'zgu: yoqilgan</button>
+      </div>
+      <div class="two">
+        <button id="btnRecal">Turnikni qayta aniqlash</button>
+        <button id="btnSound">Ovoz: yoqilgan</button>
+      </div>
+      <div class="two">
+        <button id="btnUp">Chiziq ↑</button><button id="btnDown">Chiziq ↓</button>
+      </div>
+      <p class="hint small">Turnik chizig'i osilib turganda qo'llaringizdan aniqlanadi. Chiziq jag'ingiz turnikdan o'tgan joyga to'g'ri kelmasa, ↑/↓ bilan sozlang.</p>
+    </div>
+    <div id="tabHist" hidden></div>
+    <button id="btnCloseSheet" class="primary wide">Yopish</button>
+  </div>
+</div>
+
+<div id="result" class="sheet" hidden><div class="sheetBody" id="resultBody"></div></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
